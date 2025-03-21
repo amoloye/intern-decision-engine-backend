@@ -8,5 +8,5 @@ import org.springframework.stereotype.Component;
  * Holds the response data of the REST endpoint.
  */
 
-public record DecisionResponse(Integer loanAmount,Integer loanPeriod,String errorMessage){}
+public record DecisionResponse(Long loanAmount,Integer loanPeriod,String errorMessage){}
 

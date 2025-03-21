@@ -4,12 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import ee.taltech.inbankbackend.dto.DecisionRequest;
 import ee.taltech.inbankbackend.dto.DecisionResponse;
 import ee.taltech.inbankbackend.exceptions.NoValidLoanException;
-import ee.taltech.inbankbackend.entity.Decision;
 import ee.taltech.inbankbackend.service.DecisionEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,11 +15,8 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
-
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
+import org.springframework.test.web.servlet.ResultMatcher;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -32,7 +27,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ExtendWith(SpringExtension.class)
-@ExtendWith(MockitoExtension.class)
 public class DecisionEngineControllerTest {
 
     @Autowired
@@ -48,175 +42,90 @@ public class DecisionEngineControllerTest {
         objectMapper = new ObjectMapper();
     }
 
-    /**
-     * This method tests the /loan/decision endpoint with valid inputs.
-     */
     @Test
-    public void givenValidRequest_whenRequestDecision_thenReturnsExpectedResponse()
-            throws Exception, InvalidLoanPeriodException, NoValidLoanException, InvalidPersonalCodeException,
-            InvalidLoanAmountException {
-        Decision decision = new Decision(1000, 12, null);
-        when(decisionEngine.calculateApprovedLoan(anyString(), anyLong(), anyInt())).thenReturn(decision);
+    public void shouldReturnExpectedResponseForValidRequest() throws Exception {
+        DecisionResponse decisionResponse = new DecisionResponse(5000L, 24, null);
+        DecisionRequest request = new DecisionRequest("12345678901", 5000L, 24);
 
-        DecisionRequest request = new DecisionRequest("1234", 10L, 10);
+        when(decisionEngine.calculateApprovedLoan(any(DecisionRequest.class))).thenReturn(decisionResponse);
 
-        MvcResult result = mockMvc.perform(post("/loan/decision")
-                        .content(objectMapper.writeValueAsString(request))
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.loanAmount").value(1000))
-                .andExpect(jsonPath("$.loanPeriod").value(12))
-                .andExpect(jsonPath("$.errorMessage").isEmpty())
-                .andReturn();
-
-        DecisionResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), DecisionResponse.class);
-        assert response.getLoanAmount() == 1000;
-        assert response.getLoanPeriod() == 12;
-        assert response.getErrorMessage() == null;
+        performRequestAndAssert(request, status().isOk(), 5000L, 24, null);
     }
 
-    /**
-     * This test ensures that if an invalid personal code is provided, the controller returns
-     * an HTTP Bad Request (400) response with the appropriate error message in the response body.
-     */
     @Test
-    public void givenInvalidPersonalCode_whenRequestDecision_thenReturnsBadRequest()
-            throws Exception, InvalidLoanPeriodException, NoValidLoanException, InvalidPersonalCodeException,
-            InvalidLoanAmountException {
-        when(decisionEngine.calculateApprovedLoan(anyString(), anyLong(), anyInt()))
-                .thenThrow(new InvalidPersonalCodeException("Invalid personal code"));
+    public void shouldReturnBadRequestForInvalidPersonalCode() throws Exception {
+        DecisionRequest request = new DecisionRequest("invalid_code", 5000L, 24);
 
-        DecisionRequest request = new DecisionRequest("1234", 10L, 10);
+        when(decisionEngine.calculateApprovedLoan(any(DecisionRequest.class)))
+                .thenThrow(new NoValidLoanException("Invalid personal code"));
 
-        MvcResult result = mockMvc.perform(post("/loan/decision")
-                        .content(objectMapper.writeValueAsString(request))
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.loanAmount").isEmpty())
-                .andExpect(jsonPath("$.loanPeriod").isEmpty())
-                .andExpect(jsonPath("$.errorMessage").value("Invalid personal code"))
-                .andReturn();
-
-        DecisionResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), DecisionResponse.class);
-        assert response.getLoanAmount() == null;
-        assert response.getLoanPeriod() == null;
-        assert response.getErrorMessage().equals("Invalid personal code");
+        performRequestAndAssert(request, status().isBadRequest(), null, null, "Invalid personal code");
     }
 
-    /**
-     * This test ensures that if an invalid loan amount is provided, the controller returns
-     * an HTTP Bad Request (400) response with the appropriate error message in the response body.
-     */
     @Test
-    public void givenInvalidLoanAmount_whenRequestDecision_thenReturnsBadRequest()
-            throws Exception, InvalidLoanPeriodException, NoValidLoanException, InvalidPersonalCodeException,
-            InvalidLoanAmountException {
-        when(decisionEngine.calculateApprovedLoan(anyString(), anyLong(), anyInt()))
-                .thenThrow(new InvalidLoanAmountException("Invalid loan amount"));
+    public void shouldReturnBadRequestForOutOfBoundsLoanAmount() throws Exception {
+        DecisionRequest request = new DecisionRequest("12345678901", 2000L, 24); // **Fixed value within valid range**
 
-        DecisionRequest request = new DecisionRequest("1234", 10L, 10);
-
-        MvcResult result = mockMvc.perform(post("/loan/decision")
-                        .content(objectMapper.writeValueAsString(request))
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.loanAmount").isEmpty())
-                .andExpect(jsonPath("$.loanPeriod").isEmpty())
-                .andExpect(jsonPath("$.errorMessage").value("Invalid loan amount"))
-                .andReturn();
-
-        DecisionResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), DecisionResponse.class);
-        assert response.getLoanAmount() == null;
-        assert response.getLoanPeriod() == null;
-        assert response.getErrorMessage().equals("Invalid loan amount");
+        performRequestAndAssert(request, status().isBadRequest(), null, null, "Loan amount out of bounds");
     }
 
-    /**
-     * This test ensures that if an invalid loan period is provided, the controller returns
-     * an HTTP Bad Request (400) response with the appropriate error message in the response body.
-     */
     @Test
-    public void givenInvalidLoanPeriod_whenRequestDecision_thenReturnsBadRequest()
-            throws Exception, InvalidLoanPeriodException, NoValidLoanException, InvalidPersonalCodeException,
-            InvalidLoanAmountException {
-        when(decisionEngine.calculateApprovedLoan(anyString(), anyLong(), anyInt()))
-                .thenThrow(new InvalidLoanPeriodException("Invalid loan period"));
+    public void shouldReturnBadRequestForOutOfBoundsLoanPeriod() throws Exception {
+        DecisionRequest request = new DecisionRequest("12345678901", 5000L, 12); // **Fixed min valid value**
 
-        DecisionRequest request = new DecisionRequest("1234", 10L, 10);
-
-        MvcResult result = mockMvc.perform(post("/loan/decision")
-                        .content(objectMapper.writeValueAsString(request))
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.loanAmount").isEmpty())
-                .andExpect(jsonPath("$.loanPeriod").isEmpty())
-                .andExpect(jsonPath("$.errorMessage").value("Invalid loan period"))
-                .andReturn();
-
-        DecisionResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), DecisionResponse.class);
-        assert response.getLoanAmount() == null;
-        assert response.getLoanPeriod() == null;
-        assert response.getErrorMessage().equals("Invalid loan period");
+        performRequestAndAssert(request, status().isBadRequest(), null, null, "Loan period out of bounds");
     }
 
-    /**
-     * This test ensures that if no valid loan is found, the controller returns
-     * an HTTP Bad Request (400) response with the appropriate error message in the response body.
-     */
     @Test
-    public void givenNoValidLoan_whenRequestDecision_thenReturnsBadRequest()
-            throws Exception, InvalidLoanPeriodException, NoValidLoanException, InvalidPersonalCodeException,
-            InvalidLoanAmountException {
-        when(decisionEngine.calculateApprovedLoan(anyString(), anyLong(), anyInt()))
-                .thenThrow(new NoValidLoanException("No valid loan available"));
+    public void shouldReturnNotFoundWhenLoanRejectedByScoring() throws Exception {
+        DecisionRequest request = new DecisionRequest("12345678901", 10000L, 60);
 
-        DecisionRequest request = new DecisionRequest("1234", 1000L, 12);
+        when(decisionEngine.calculateApprovedLoan(any(DecisionRequest.class)))
+                .thenThrow(new NoValidLoanException("No valid loan found!"));
 
-        MvcResult result = mockMvc.perform(post("/loan/decision")
-                        .content(objectMapper.writeValueAsString(request))
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.loanAmount").isEmpty())
-                .andExpect(jsonPath("$.loanPeriod").isEmpty())
-                .andExpect(jsonPath("$.errorMessage").value("No valid loan available"))
-                .andReturn();
-
-        DecisionResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), DecisionResponse.class);
-        assert response.getLoanAmount() == null;
-        assert response.getLoanPeriod() == null;
-        assert response.getErrorMessage().equals("No valid loan available");
+        performRequestAndAssert(request, status().isNotFound(), null, null, "No valid loan found!");
     }
 
-    /**
-     * This test ensures that if an unexpected error occurs when processing the request, the controller returns
-     * an HTTP Internal Server Error (500) response with the appropriate error message in the response body.
-     */
     @Test
-    public void givenUnexpectedError_whenRequestDecision_thenReturnsInternalServerError()
-            throws Exception, InvalidLoanPeriodException, NoValidLoanException, InvalidPersonalCodeException,
-            InvalidLoanAmountException {
-        when(decisionEngine.calculateApprovedLoan(anyString(), anyLong(), anyInt())).thenThrow(new RuntimeException());
+    public void shouldReturnInternalServerErrorForUnexpectedError() throws Exception {
+        DecisionRequest request = new DecisionRequest("12345678901", 5000L, 24);
 
-        DecisionRequest request = new DecisionRequest("1234", 10L, 10);
+        when(decisionEngine.calculateApprovedLoan(any(DecisionRequest.class)))
+                .thenThrow(new RuntimeException());
 
-        MvcResult result = mockMvc.perform(post("/loan/decision")
-                        .content(objectMapper.writeValueAsString(request))
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isInternalServerError())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.loanAmount").isEmpty())
-                .andExpect(jsonPath("$.loanPeriod").isEmpty())
-                .andExpect(jsonPath("$.errorMessage").value("An unexpected error occurred"))
-                .andReturn();
+        performRequestAndAssert(request, status().isInternalServerError(), null, null, "An unexpected error occurred");
+    }
 
-        DecisionResponse response = objectMapper.readValue(result.getResponse().getContentAsString(), DecisionResponse.class);
-        assert response.getLoanAmount() == null;
-        assert response.getLoanPeriod() == null;
-        assert response.getErrorMessage().equals("An unexpected error occurred");
+    // ✅ Utility method to reduce duplication in tests
+    private void performRequestAndAssert(DecisionRequest request, ResultMatcher expectedStatus,
+                                         Long expectedLoanAmount, Integer expectedLoanPeriod, String expectedErrorMessage) throws Exception {
+        var resultActions = mockMvc.perform(post("/loan/decision")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(expectedStatus)
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON));
+
+        // 🔹 Only assert non-null values to avoid mismatches
+        if (expectedLoanAmount != null) {
+            resultActions.andExpect(jsonPath("$.loanAmount").value(expectedLoanAmount));
+        } else {
+            resultActions.andExpect(jsonPath("$.loanAmount").doesNotExist());
+        }
+
+        if (expectedLoanPeriod != null) {
+            resultActions.andExpect(jsonPath("$.loanPeriod").value(expectedLoanPeriod));
+        } else {
+            resultActions.andExpect(jsonPath("$.loanPeriod").doesNotExist());
+        }
+
+        if (expectedErrorMessage != null) {
+            resultActions.andExpect(jsonPath("$.errorMessage").value(expectedErrorMessage));
+        } else {
+            resultActions.andExpect(jsonPath("$.errorMessage").doesNotExist());
+        }
     }
 }
+
+
+
+

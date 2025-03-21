@@ -15,4 +15,13 @@ public enum Segmentation {
     public int getValue() {
         return value;
     }
+
+    public static Segmentation fromPersonalCode(String personalCode) {
+        int segment = Integer.parseInt(personalCode.substring(personalCode.length() - 4));
+
+        if (segment < 2500) return DEBT;
+        if (segment < 5000) return SEG_ONE;
+        if (segment < 7500) return SEG_TWO;
+        return SEG_THREE;
+    }
 }
